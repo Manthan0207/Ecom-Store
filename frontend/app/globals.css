@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html,
+  body {
+    @apply m-0 min-h-full bg-[#f8f8f8] text-[#111111] antialiased;
+    font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+  }
+
+  a {
+    @apply text-inherit no-underline;
+  }
+}
+
+@layer utilities {
+  .font-editorial {
+    font-family: "Didot", "Bodoni MT", "Times New Roman", serif;
+  }
+
+  .bg-atelier {
+    background:
+      linear-gradient(130deg, #f8f8f8 0%, #f8f8f8 55%, #f1f1f1 55%, #f1f1f1 100%),
+      radial-gradient(circle at 18% 14%, rgba(17, 17, 17, 0.05), transparent 40%);
+  }
+
+  .grain-overlay {
+    position: relative;
+  }
+
+  .grain-overlay::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.18;
+    background-image: radial-gradient(#000 0.45px, transparent 0.45px);
+    background-size: 3px 3px;
+  }
+
+  .field {
+    @apply w-full border border-black/20 bg-white px-4 py-3 text-sm tracking-wide outline-none transition focus:border-black;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center border border-black bg-black px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:-translate-y-0.5 hover:bg-neutral-900 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center border border-black bg-transparent px-6 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-black transition hover:-translate-y-0.5 hover:bg-black hover:text-white;
+  }
+}

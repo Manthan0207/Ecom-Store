@@ -410,21 +410,57 @@ func generateOTP() (string, error) {
 }
 
 func (s *server) sendOTPEmail(toEmail, toName, otpCode string) error {
-	subject := "Your Ecom Store login OTP"
-	body := fmt.Sprintf(
-		"Hi %s,\r\n\r\nYour login OTP is: %s\r\nThis code expires in 10 minutes.\r\n\r\nIf this was not you, please reset your password.\r\n",
-		toName,
-		otpCode,
-	)
+	subject := fmt.Sprintf("%s is your STORE OS verification code", otpCode)
+	
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1a1a1a; margin: 0; padding: 0; background-color: #ffffff; }
+        .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+        .header { margin-bottom: 40px; text-align: left; }
+        .logo { font-size: 20px; font-weight: bold; letter-spacing: 0.2em; text-transform: uppercase; color: #000000; text-decoration: none; }
+        .content { background: #f9f9fb; border-radius: 24px; padding: 40px; border: 1px solid #eeeeee; }
+        .title { font-size: 24px; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.02em; }
+        .text { color: #666666; font-size: 16px; margin-bottom: 32px; }
+        .otp-container { background: #ffffff; border-radius: 16px; padding: 24px; text-align: center; border: 1px solid #e5e5e7; margin-bottom: 32px; }
+        .otp-code { font-size: 40px; font-weight: 800; letter-spacing: 0.4em; color: #000000; margin: 0; font-family: 'Courier New', Courier, monospace; }
+        .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #999999; text-transform: uppercase; letter-spacing: 0.1em; }
+        .expiry { color: #f43f5e; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="#" class="logo">STORE OS</a>
+        </div>
+        <div class="content">
+            <h1 class="title">Verification Code</h1>
+            <p class="text">Hi %s, use the following code to complete your secure login sequence. For your protection, this code will expire in <span class="expiry">10 minutes</span>.</p>
+            <div class="otp-container">
+                <p class="otp-code">%s</p>
+            </div>
+            <p class="text" style="margin-bottom: 0; font-size: 14px;">If you didn't request this, you can safely ignore this email or contact support if you have concerns.</p>
+        </div>
+        <div class="footer">
+            &copy; 2026 Ecom Store • Secure Commerce Identity Layer
+        </div>
+    </div>
+</body>
+</html>
+`, toName, otpCode)
 
 	message := strings.Join([]string{
 		fmt.Sprintf("From: %s", s.cfg.SMTPFrom),
 		fmt.Sprintf("To: %s", toEmail),
 		fmt.Sprintf("Subject: %s", subject),
 		"MIME-Version: 1.0",
-		"Content-Type: text/plain; charset=\"UTF-8\"",
+		"Content-Type: text/html; charset=\"UTF-8\"",
 		"",
-		body,
+		htmlBody,
 	}, "\r\n")
 
 	addr := fmt.Sprintf("%s:%s", s.cfg.SMTPHost, s.cfg.SMTPPort)

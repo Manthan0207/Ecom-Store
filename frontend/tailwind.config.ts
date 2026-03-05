@@ -7,7 +7,17 @@ const config: Config = {
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        background: "var(--background)",
+        foreground: "var(--foreground)",
+        border: "var(--border)",
+        accent: "var(--accent)",
+        "accent-foreground": "var(--accent-foreground)",
+        muted: "var(--muted)",
+        "muted-foreground": "var(--muted-foreground)",
+      },
+    },
   },
   plugins: [],
 };

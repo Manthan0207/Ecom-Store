@@ -2,10 +2,30 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { motion, Variants } from "framer-motion";
+import { ShieldCheck, ArrowRight, Mail, Lock, User as UserIcon, Loader2 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+      delayChildren: 0.2,
+    },
+  },
+};
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
+};
+
 export default function SignupPage() {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,7 +53,8 @@ export default function SignupPage() {
         return;
       }
 
-      setSuccess(data.message || "Signup successful");
+      setSuccess(data.message || "Signup successful! Redirecting to login...");
+      setTimeout(() => router.push("/login"), 1500);
     } catch {
       setError("Request failed");
     } finally {
@@ -42,65 +63,150 @@ export default function SignupPage() {
   };
 
   return (
-    <section className="mx-auto w-full max-w-xl py-6 sm:py-10">
-      <div className="border border-black bg-white p-6 shadow-[8px_8px_0_0_rgba(0,0,0,0.9)] sm:p-8">
-        <p className="mb-3 text-[10px] uppercase tracking-[0.24em] text-black/55">Account setup</p>
-        <h1 className="font-editorial text-4xl leading-none sm:text-5xl">Create account</h1>
-        <p className="mt-3 text-sm text-black/70">Mandatory 2FA is enabled. OTP comes to your email at login.</p>
+    <div className="flex min-h-[calc(100vh-80px)] items-center justify-center px-6 py-12">
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+        className="grid w-full max-w-5xl gap-12 lg:grid-cols-2 lg:items-center"
+      >
+        {/* Left Side: Branding/Content */}
+        <div className="hidden space-y-8 lg:block">
+          <motion.div variants={itemVariants} className="space-y-4">
+            <h1 className="text-balance font-serif text-6xl tracking-tight">
+              Begin your <br />
+              <span className="italic text-black/40">experience.</span>
+            </h1>
+            <p className="max-w-md text-lg text-muted-foreground">
+              Join our exclusive platform and secure your commerce identity with enterprise-grade protocols.
+            </p>
+          </motion.div>
 
-        {error ? (
-          <div className="mt-5 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        ) : null}
-        {success ? (
-          <div className="mt-5 border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {success}
-          </div>
-        ) : null}
-
-        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-          <div className="space-y-2">
-            <label className="block text-[11px] uppercase tracking-[0.2em] text-black/65">Name</label>
-            <input className="field" value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-[11px] uppercase tracking-[0.2em] text-black/65">Email</label>
-            <input
-              className="field"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
+          <motion.div variants={itemVariants} className="space-y-6">
+            <FeatureItem 
+              icon={<ShieldCheck size={20} />}
+              title="Stateful Security"
+              desc="Sequence-based validation for every session"
             />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-[11px] uppercase tracking-[0.2em] text-black/65">Password</label>
-            <input
-              className="field"
-              type="password"
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
+            <FeatureItem 
+              icon={<Mail size={20} />}
+              title="Verified Identity"
+              desc="Mandatory hardware-secured OTP delivery"
             />
+          </motion.div>
+        </div>
+
+        {/* Right Side: Form */}
+        <motion.div variants={itemVariants}>
+          <div className="glass-dark rounded-[2rem] p-8 shadow-2xl sm:p-12">
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold tracking-tight">Create Account</h2>
+              <p className="mt-2 text-sm text-muted-foreground">Enter your details to get started.</p>
+            </div>
+
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mb-6 rounded-xl bg-red-500/10 p-4 text-sm text-red-600 border border-red-500/20"
+              >
+                {error}
+              </motion.div>
+            )}
+
+            {success && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mb-6 rounded-xl bg-green-500/10 p-4 text-sm text-green-600 border border-green-500/20"
+              >
+                {success}
+              </motion.div>
+            )}
+
+            <form className="space-y-6" onSubmit={onSubmit}>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-black/40">Full Name</label>
+                <div className="relative">
+                  <UserIcon className="absolute right-4 top-1/2 -translate-y-1/2 text-black/20 pointer-events-none" size={18} />
+                  <input
+                    className="premium-input pr-12"
+                    type="text"
+                    placeholder="John Doe"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-black/40">Email Address</label>
+                <div className="relative">
+                  <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-black/20 pointer-events-none" size={18} />
+                  <input
+                    className="premium-input pr-12"
+                    type="email"
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-black/40">Password</label>
+                <div className="relative">
+                  <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-black/20 pointer-events-none" size={18} />
+                  <input
+                    className="premium-input pr-12"
+                    type="password"
+                    placeholder="••••••••"
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">Minimum 8 characters with complexity</p>
+              </div>
+
+              <button className="premium-btn w-full group" type="submit" disabled={loading}>
+                {loading ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : (
+                  <>
+                    Create Account
+                    <ArrowRight className="ml-2 transition-transform group-hover:translate-x-1" size={16} />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-8 text-center text-sm">
+              <span className="text-muted-foreground">Already have an account? </span>
+              <Link className="font-bold text-black hover:underline" href="/login">
+                Sign In
+              </Link>
+            </div>
           </div>
+        </motion.div>
+      </motion.div>
+    </div>
+  );
+}
 
-          <button className="btn-primary w-full" type="submit" disabled={loading}>
-            {loading ? "Creating..." : "Sign Up"}
-          </button>
-        </form>
-
-        <p className="mt-5 text-xs uppercase tracking-[0.18em] text-black/60">
-          Already signed up?{" "}
-          <Link className="border-b border-black pb-0.5 text-black" href="/login">
-            Go to login
-          </Link>
-        </p>
+function FeatureItem({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+  return (
+    <div className="flex items-center gap-4">
+      <div className="rounded-xl bg-black px-3 py-3 text-white">
+        {icon}
       </div>
-      <div className="mt-6 border border-black/15 bg-white/70 px-5 py-4 text-[11px] uppercase tracking-[0.2em] text-black/55">
-        Retail-ready style direction inspired by luxury fashion storefronts
+      <div>
+        <h3 className="text-sm font-bold tracking-tight">{title}</h3>
+        <p className="text-xs text-muted-foreground">{desc}</p>
       </div>
-    </section>
+    </div>
   );
 }

@@ -17,6 +17,7 @@ import (
 	"ecom-store/backend/internal/db"
 	"ecom-store/backend/internal/httpx"
 
+	upstash "github.com/chronark/upstash-go"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/golang-jwt/jwt/v5"
@@ -28,12 +29,13 @@ import (
 
 const (
 	preAuthCookieName = "ecom_pre_auth"
-	sessionCookieName = "ecom_session"
+	authCookieName    = "ecom_auth"
 )
 
 type server struct {
-	cfg config.Config
-	db  *pgxpool.Pool
+	cfg   config.Config
+	db    *pgxpool.Pool
+	redis *upstash.Upstash
 }
 
 type user struct {
@@ -58,6 +60,10 @@ type verify2FAReq struct {
 	Code string `json:"code"`
 }
 
+type authClaims struct {
+	jwt.RegisteredClaims
+}
+
 type ctxKey string
 
 const userCtxKey = ctxKey("user")
@@ -72,7 +78,15 @@ func main() {
 	}
 	defer pool.Close()
 
-	srv := &server{cfg: cfg, db: pool}
+	redisClient, err := upstash.New(upstash.Options{
+		Url:   cfg.UpstashURL,
+		Token: cfg.UpstashToken,
+	})
+	if err != nil {
+		log.Fatalf("upstash connection failed: %v", err)
+	}
+
+	srv := &server{cfg: cfg, db: pool, redis: &redisClient}
 
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
@@ -128,9 +142,9 @@ func (s *server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = s.db.Exec(r.Context(), `
-        INSERT INTO users(name, email, password_hash, totp_secret)
-        VALUES($1, $2, $3, $4)
-    `, req.Name, req.Email, string(hash), "")
+        INSERT INTO users(name, email, password_hash)
+        VALUES($1, $2, $3)
+    `, req.Name, req.Email, string(hash))
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			httpx.Error(w, http.StatusConflict, "email already registered")
@@ -211,18 +225,18 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	preAuthToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": u.ID.String(),
 		"exp": time.Now().Add(10 * time.Minute).Unix(),
 	})
 
-	signed, err := token.SignedString([]byte(s.cfg.JWTSecret))
+	signedPreAuth, err := preAuthToken.SignedString([]byte(s.cfg.JWTSecret))
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "failed to start 2FA flow")
 		return
 	}
 
-	s.setCookie(w, preAuthCookieName, signed, int((10 * time.Minute).Seconds()))
+	s.setCookie(w, preAuthCookieName, signedPreAuth, int((10 * time.Minute).Seconds()))
 
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"message":      "password verified; OTP sent to your email",
@@ -253,32 +267,9 @@ func (s *server) handleVerify2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := jwt.Parse(preAuthCookie.Value, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-		return []byte(s.cfg.JWTSecret), nil
-	})
-	if err != nil || !token.Valid {
-		httpx.Error(w, http.StatusUnauthorized, "invalid pre-auth session")
-		return
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		httpx.Error(w, http.StatusUnauthorized, "invalid pre-auth claims")
-		return
-	}
-
-	userIDStr, ok := claims["sub"].(string)
-	if !ok || userIDStr == "" {
-		httpx.Error(w, http.StatusUnauthorized, "invalid pre-auth subject")
-		return
-	}
-
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := s.parsePreAuthSubject(preAuthCookie.Value)
 	if err != nil {
-		httpx.Error(w, http.StatusUnauthorized, "invalid user id")
+		httpx.Error(w, http.StatusUnauthorized, "invalid pre-auth session")
 		return
 	}
 
@@ -317,38 +308,47 @@ func (s *server) handleVerify2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := uuid.New()
-	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	userIDStr := userID.String()
+	jti := uuid.NewString()
+	expiry := time.Now().Add(7 * 24 * time.Hour)
 
-	_, err = s.db.Exec(r.Context(), `
-        INSERT INTO sessions(id, user_id, expires_at)
-        VALUES($1, $2, $3)
-    `, sessionID, userID, expiresAt)
+	authToken := jwt.NewWithClaims(jwt.SigningMethodHS256, authClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userIDStr,
+			ExpiresAt: jwt.NewNumericDate(expiry),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        jti,
+		},
+	})
+
+	signedAuth, err := authToken.SignedString([]byte(s.cfg.JWTSecret))
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "failed to create session")
+		httpx.Error(w, http.StatusInternalServerError, "failed to issue auth token")
+		return
+	}
+
+	if err := s.redis.SetEX(s.sessionKey(jti), int((7 * 24 * time.Hour).Seconds()), userIDStr); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "failed to store session state")
 		return
 	}
 
 	s.clearCookie(w, preAuthCookieName)
-	s.setCookie(w, sessionCookieName, sessionID.String(), int((7 * 24 * time.Hour).Seconds()))
+	s.setCookie(w, authCookieName, signedAuth, int((7 * 24 * time.Hour).Seconds()))
 
 	httpx.JSON(w, http.StatusOK, map[string]string{"message": "2FA verified, login successful"})
 }
 
 func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	sessionCookie, err := r.Cookie(sessionCookieName)
+	authCookie, err := r.Cookie(authCookieName)
 	if err == nil {
-		sessionID, parseErr := uuid.Parse(sessionCookie.Value)
-		if parseErr == nil {
-			_, _ = s.db.Exec(r.Context(), `
-                UPDATE sessions
-                SET revoked_at = NOW()
-                WHERE id = $1
-            `, sessionID)
+		claims, parseErr := s.parseAuthClaims(authCookie.Value)
+		if parseErr == nil && claims.ID != "" {
+			// Keep a tiny TTL so this token is no longer accepted.
+			_ = s.redis.SetEX(s.sessionKey(claims.ID), 1, "revoked")
 		}
 	}
 
-	s.clearCookie(w, sessionCookieName)
+	s.clearCookie(w, authCookieName)
 	httpx.JSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
@@ -368,35 +368,90 @@ func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sessionCookie, err := r.Cookie(sessionCookieName)
+		authCookie, err := r.Cookie(authCookieName)
 		if err != nil {
-			httpx.Error(w, http.StatusUnauthorized, "missing session")
+			httpx.Error(w, http.StatusUnauthorized, "missing auth token")
 			return
 		}
 
-		sessionID, err := uuid.Parse(sessionCookie.Value)
+		claims, err := s.parseAuthClaims(authCookie.Value)
+		if err != nil || claims.Subject == "" || claims.ID == "" {
+			httpx.Error(w, http.StatusUnauthorized, "invalid auth token")
+			return
+		}
+
+		redisUserID, err := s.redis.Get(s.sessionKey(claims.ID))
 		if err != nil {
-			httpx.Error(w, http.StatusUnauthorized, "invalid session token")
+			httpx.Error(w, http.StatusInternalServerError, "failed to validate session state")
+			return
+		}
+		if redisUserID == "" || redisUserID != claims.Subject {
+			httpx.Error(w, http.StatusUnauthorized, "invalid or expired session")
+			return
+		}
+
+		userID, err := uuid.Parse(claims.Subject)
+		if err != nil {
+			httpx.Error(w, http.StatusUnauthorized, "invalid user id")
 			return
 		}
 
 		var u user
 		err = s.db.QueryRow(r.Context(), `
-            SELECT u.id, u.name, u.email, u.password_hash
-            FROM sessions s
-            JOIN users u ON u.id = s.user_id
-            WHERE s.id = $1
-                AND s.revoked_at IS NULL
-                AND s.expires_at > NOW()
-        `, sessionID).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash)
+            SELECT id, name, email, password_hash
+            FROM users
+            WHERE id = $1
+        `, userID).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash)
 		if err != nil {
-			httpx.Error(w, http.StatusUnauthorized, "invalid or expired session")
+			httpx.Error(w, http.StatusUnauthorized, "user not found")
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), userCtxKey, u)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
+}
+
+func (s *server) parsePreAuthSubject(rawToken string) (uuid.UUID, error) {
+	token, err := jwt.Parse(rawToken, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(s.cfg.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return uuid.Nil, errors.New("invalid pre-auth token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return uuid.Nil, errors.New("invalid pre-auth claims")
+	}
+
+	userIDStr, ok := claims["sub"].(string)
+	if !ok || userIDStr == "" {
+		return uuid.Nil, errors.New("invalid pre-auth subject")
+	}
+
+	return uuid.Parse(userIDStr)
+}
+
+func (s *server) parseAuthClaims(rawToken string) (*authClaims, error) {
+	claims := &authClaims{}
+	token, err := jwt.ParseWithClaims(rawToken, claims, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(s.cfg.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+	return claims, nil
+}
+
+func (s *server) sessionKey(jti string) string {
+	return "session:" + jti
 }
 
 func generateOTP() (string, error) {
@@ -411,7 +466,7 @@ func generateOTP() (string, error) {
 
 func (s *server) sendOTPEmail(toEmail, toName, otpCode string) error {
 	subject := fmt.Sprintf("%s is your STORE OS verification code", otpCode)
-	
+
 	htmlBody := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>

@@ -14,8 +14,8 @@ const fadeIn: Variants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } },
 };
 
-export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await use(params);
   const product = getProduct(id);
   const { addItem } = useCart();
   const [added, setAdded] = useState(false);

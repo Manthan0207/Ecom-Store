@@ -20,6 +20,8 @@ type Config struct {
 	SMTPUsername   string
 	SMTPPassword   string
 	SMTPFrom       string
+	UpstashURL     string
+	UpstashToken   string
 }
 
 func Load() Config {
@@ -42,6 +44,8 @@ func Load() Config {
 		SMTPUsername:   mustEnv("SMTP_USERNAME"),
 		SMTPPassword:   mustEnv("SMTP_PASSWORD"),
 		SMTPFrom:       mustEnv("SMTP_FROM"),
+		UpstashURL:     mustEnv("UPSTASH_REDIS_REST_URL"),
+		UpstashToken:   mustEnv("UPSTASH_REDIS_REST_TOKEN"),
 	}
 
 	return cfg

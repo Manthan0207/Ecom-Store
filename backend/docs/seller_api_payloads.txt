@@ -1,0 +1,233 @@
+Seller API Payload Guide
+Base path: /api/seller
+Auth: Cookie-based (ecom_auth). Seller-admin account only.
+
+Auth + role endpoints you must use before seller APIs
+1) POST /api/auth/login
+2) POST /api/auth/verify-2fa
+3) GET /api/auth/role
+
+Available endpoints
+1) GET /colors
+2) POST /products
+3) GET /products
+4) GET /products/{id}
+5) PUT /products/{id}
+6) DELETE /products/{id}
+
+------------------------------------------------------------
+1) GET /colors
+Response 200:
+{
+  "items": [
+    {
+      "id": "d3f7d3a2-....",
+      "name": "Black",
+      "hex_code": "#000000"
+    }
+  ]
+}
+
+Frontend note:
+- First call this endpoint.
+- Use returned "id" as color_id in product create/update payload.
+
+------------------------------------------------------------
+Auth and role flow (required frontend sequence)
+Step 1:
+POST /api/auth/login
+Body:
+{
+  "email": "wearwithvesture@gmail.com",
+  "password": "123456"
+}
+
+Step 2:
+POST /api/auth/verify-2fa
+Body:
+{
+  "code": "123456"
+}
+
+Step 3:
+GET /api/auth/role
+Response:
+{
+  "user_id": "USER_UUID",
+  "role": "seller"
+}
+
+Rules:
+- Always call APIs with credentials included (cookie auth).
+- If role != "seller", do not open seller dashboard.
+- Seller routes will return 403 when user is not seller admin.
+
+Fetch config example:
+fetch(url, {
+  method: "GET or POST/PUT/DELETE",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload) // only for non-GET
+})
+
+------------------------------------------------------------
+2) POST /products
+Body JSON:
+{
+  "title": "Premium Linen Shirt",
+  "description": "Soft linen shirt for daily wear.",
+  "brand": "Vesture",
+  "category_id": "",
+  "target_audience": "men",
+  "status": "draft",
+  "colors": [
+    {
+      "color_id": "UUID_FROM_COLORS_ENDPOINT",
+      "sort_order": 0
+    },
+    {
+      "color_id": "UUID_FROM_COLORS_ENDPOINT_2",
+      "sort_order": 1
+    }
+  ],
+  "variants": [
+    {
+      "color_id": "UUID_FROM_COLORS_ENDPOINT",
+      "sku": "LINEN-BLK-M",
+      "size": "M",
+      "price": 1999,
+      "compare_at_price": 2499,
+      "stock_qty": 50,
+      "is_active": true
+    },
+    {
+      "color_id": "UUID_FROM_COLORS_ENDPOINT_2",
+      "sku": "LINEN-WHT-M",
+      "size": "M",
+      "price": 1999,
+      "compare_at_price": null,
+      "stock_qty": 30,
+      "is_active": true
+    }
+  ],
+  "images": [
+    {
+      "color_id": "UUID_FROM_COLORS_ENDPOINT",
+      "image_url": "https://res.cloudinary.com/.../black-front.jpg",
+      "alt_text": "Black shirt front",
+      "sort_order": 0,
+      "is_featured": true
+    },
+    {
+      "color_id": "UUID_FROM_COLORS_ENDPOINT",
+      "image_url": "https://res.cloudinary.com/.../black-back.jpg",
+      "alt_text": "Black shirt back",
+      "sort_order": 1,
+      "is_featured": false
+    },
+    {
+      "color_id": null,
+      "image_url": "https://res.cloudinary.com/.../size-chart.jpg",
+      "alt_text": "Size chart",
+      "sort_order": 99,
+      "is_featured": false
+    }
+  ]
+}
+
+Response 201:
+{
+  "id": "PRODUCT_UUID",
+  "message": "product created"
+}
+
+------------------------------------------------------------
+3) GET /products
+Response 200:
+{
+  "items": [
+    {
+      "id": "PRODUCT_UUID",
+      "title": "Premium Linen Shirt",
+      "brand": "Vesture",
+      "status": "draft",
+      "target_audience": "men",
+      "category_id": null,
+      "created_at": "2026-03-07T12:00:00Z",
+      "updated_at": "2026-03-07T12:00:00Z"
+    }
+  ]
+}
+
+------------------------------------------------------------
+4) GET /products/{id}
+Response 200:
+{
+  "id": "PRODUCT_UUID",
+  "title": "Premium Linen Shirt",
+  "description": "Soft linen shirt for daily wear.",
+  "brand": "Vesture",
+  "status": "draft",
+  "target_audience": "men",
+  "category_id": null,
+  "colors": [
+    {
+      "color_id": "UUID",
+      "color_name": "Black",
+      "hex_code": "#000000",
+      "sort_order": 0
+    }
+  ],
+  "variants": [
+    {
+      "id": "VARIANT_UUID",
+      "color_id": "UUID",
+      "sku": "LINEN-BLK-M",
+      "size": "M",
+      "price": 1999,
+      "compare_at_price": 2499,
+      "stock_qty": 50,
+      "is_active": true
+    }
+  ],
+  "images": [
+    {
+      "id": "IMAGE_UUID",
+      "color_id": "UUID",
+      "image_url": "https://res.cloudinary.com/.../black-front.jpg",
+      "alt_text": "Black shirt front",
+      "sort_order": 0,
+      "is_featured": true
+    }
+  ],
+  "created_at": "2026-03-07T12:00:00Z",
+  "updated_at": "2026-03-07T12:00:00Z"
+}
+
+------------------------------------------------------------
+5) PUT /products/{id}
+Body JSON:
+- Same shape as POST /products.
+- This endpoint replaces colors/variants/images with the new payload.
+
+Response 200:
+{
+  "message": "product updated"
+}
+
+------------------------------------------------------------
+6) DELETE /products/{id}
+Response 200:
+{
+  "message": "product deleted"
+}
+
+------------------------------------------------------------
+Validation notes
+- target_audience must be one of: men, women, kids, unisex
+- status must be one of: draft, active, archived
+- At least 1 color and 1 variant required
+- Every variant.color_id must exist in colors[]
+- Every image.color_id (if provided) must exist in colors[]
+- image_url should be the final Cloudinary URL from frontend upload flow
+- Seller-only flow: login -> verify OTP -> check /api/auth/role -> call /api/seller/*

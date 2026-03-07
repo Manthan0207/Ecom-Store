@@ -23,6 +23,7 @@ func main() {
 	ctx := context.Background()
 	pool, err := db.Connect(ctx, databaseURL)
 	if err != nil {
+		//fatalf logs why it failed and then do os.exit(1)
 		log.Fatalf("database connection failed: %v", err)
 	}
 	defer pool.Close()

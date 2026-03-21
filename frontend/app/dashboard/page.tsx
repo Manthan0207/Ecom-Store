@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, Variants } from "framer-motion";
-import { User, Mail, Hash, LogOut, ShoppingBag, ShieldCheck, ArrowRight } from "lucide-react";
+import { User, Mail, Hash, LogOut, ShoppingBag, ShieldCheck, ArrowRight, Store } from "lucide-react";
 import Link from "next/link";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
@@ -12,6 +12,11 @@ type Me = {
   id: string;
   name: string;
   email: string;
+};
+
+type RoleResponse = {
+  user_id: string;
+  role: string;
 };
 
 const container: Variants = {
@@ -30,24 +35,35 @@ const item: Variants = {
 export default function DashboardPage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const run = async () => {
       try {
-        const res = await fetch(`${API}/api/me`, {
-          credentials: "include",
-        });
-        const data = await res.json();
+        const [meRes, roleRes] = await Promise.all([
+          fetch(`${API}/api/me`, {
+            credentials: "include",
+          }),
+          fetch(`${API}/api/auth/role`, {
+            credentials: "include",
+          }),
+        ]);
 
-        if (!res.ok) {
-          setError(data.error || "Unauthorized");
+        const meData = await meRes.json();
+        if (!meRes.ok) {
+          setError(meData.error || "Unauthorized");
           router.push("/login");
           return;
         }
 
-        setMe(data);
+        setMe(meData);
+
+        const roleData: RoleResponse = await roleRes.json();
+        if (roleRes.ok) {
+          setRole(roleData.role);
+        }
       } catch {
         setError("Failed to load dashboard");
       } finally {
@@ -144,7 +160,7 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* Quick Actions */}
-        <motion.div variants={item} className="grid gap-4 sm:grid-cols-2 mb-8">
+        <motion.div variants={item} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
           <Link
             href="/products"
             className="group flex items-center gap-4 rounded-2xl border border-black/5 p-6 transition-all hover:bg-black/5 hover:border-black/10"
@@ -172,6 +188,22 @@ export default function DashboardPage() {
             </div>
             <ArrowRight size={16} className="ml-auto text-muted-foreground transition-transform group-hover:translate-x-1" />
           </Link>
+
+          {role === "seller" && (
+            <Link
+              href="/dashboard/seller"
+              className="group flex items-center gap-4 rounded-2xl border border-black/5 p-6 transition-all hover:bg-black/5 hover:border-black/10"
+            >
+              <div className="rounded-xl bg-black p-3 text-white">
+                <Store size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold tracking-tight">Seller Studio</h3>
+                <p className="text-sm text-muted-foreground">Manage products and inventory</p>
+              </div>
+              <ArrowRight size={16} className="ml-auto text-muted-foreground transition-transform group-hover:translate-x-1" />
+            </Link>
+          )}
         </motion.div>
 
         {/* Security Badge + Logout */}

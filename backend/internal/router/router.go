@@ -11,6 +11,7 @@ import (
 	"ecom-store/backend/internal/config"
 	"ecom-store/backend/internal/httpx"
 	"ecom-store/backend/internal/services/auth"
+	"ecom-store/backend/internal/services/catalog"
 	"ecom-store/backend/internal/services/seller"
 )
 
@@ -38,11 +39,15 @@ func New(deps Dependencies) http.Handler {
 	authRepo := auth.NewRepository(deps.DB)
 	authService := auth.NewService(deps.Config, authRepo, deps.Redis)
 	sellerRepo := seller.NewRepository(deps.DB)
+	catalogRepo := catalog.NewRepository(deps.DB)
 
 	r.Route("/api", func(api chi.Router) {
 		auth.RegisterRoutes(api, auth.RouteDeps{
 			Config:  deps.Config,
 			Service: authService,
+		})
+		catalog.RegisterRoutes(api, catalog.RouteDeps{
+			DB: catalogRepo,
 		})
 		seller.RegisterRoutes(api, seller.RouteDeps{
 			AuthService: authService,

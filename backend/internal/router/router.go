@@ -23,12 +23,18 @@ type Dependencies struct {
 func New(deps Dependencies) http.Handler {
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{deps.Config.FrontendOrigin},
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		ExposedHeaders:   []string{"Link"},
+		AllowedOrigins: []string{deps.Config.FrontendOrigin},                                // Only allow requests from the frontend origin (no "*" because credentials are enabled)
+		AllowedMethods: []string{"GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"},        // // HTTP methods the frontend is allowed to use
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"}, // Headers the client can send with requests
+		ExposedHeaders: []string{"Link"},                                                    // Headers that the browser is allowed to read from the response
+
+		// Allows the browser to send credentials (cookies, Authorization headers, etc.)
+		// Required when using cookie-based authentication across different origins
 		AllowCredentials: true,
-		MaxAge:           300,
+
+		// Tells the browser to cache the CORS preflight (OPTIONS) response for 300 seconds (5 minutes)
+		// This reduces the number of preflight requests and improves performance
+		MaxAge: 300,
 	}))
 
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {

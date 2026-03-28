@@ -1,0 +1,200 @@
+Order API Payload Guide
+Base path: /api
+Auth: Cookie-based (ecom_auth). Always send `credentials: "include"`.
+
+IMPORTANT
+- Create order is idempotent.
+- Frontend MUST send `Idempotency-Key` header for POST /api/orders.
+- Re-sending same key for same user returns the same order safely (no duplicate stock deduction).
+
+------------------------------------------------------------
+Buyer endpoints
+1) POST /orders
+2) GET /orders
+3) GET /orders/{id}
+4) POST /orders/{id}/cancel
+
+Seller-admin endpoints
+1) GET /seller/orders
+2) GET /seller/orders/{id}
+3) PATCH /seller/orders/{id}/status
+4) PATCH /seller/orders/{id}/payment-status
+
+------------------------------------------------------------
+Auth flow required before order APIs
+1) POST /api/auth/login
+2) POST /api/auth/verify-2fa
+3) GET /api/auth/role
+4) If role == "seller": show seller panels
+   If role == "user": show buyer panels
+
+------------------------------------------------------------
+1) POST /api/orders
+Headers:
+- Content-Type: application/json
+- Idempotency-Key: ORD-CHECKOUT-<uuid-or-random-string>
+
+Body:
+{
+  "items": [
+    {
+      "variant_id": "b7b09e8f-8d3e-43d6-84f0-a98e3fd7b111",
+      "quantity": 2
+    },
+    {
+      "variant_id": "1b0a4be2-1e80-4b84-a149-a7f8458f1201",
+      "quantity": 1
+    }
+  ],
+  "shipping_address": {
+    "full_name": "Rahul Sharma",
+    "phone": "+919999999999",
+    "line1": "Flat 12, ABC Residency",
+    "line2": "Near Metro Station",
+    "city": "Pune",
+    "state": "Maharashtra",
+    "postal_code": "411001",
+    "country_code": "IN"
+  },
+  "billing_address": {
+    "full_name": "Rahul Sharma",
+    "phone": "+919999999999",
+    "line1": "Flat 12, ABC Residency",
+    "line2": "Near Metro Station",
+    "city": "Pune",
+    "state": "Maharashtra",
+    "postal_code": "411001",
+    "country_code": "IN"
+  },
+  "payment_method": "cod",
+  "notes": "Leave at doorstep"
+}
+
+Success 201/200:
+{
+  "message": "order created",
+  "order": {
+    "id": "ORDER_UUID",
+    "order_number": "ORD-ABC123DEF456",
+    "user_id": "USER_UUID",
+    "status": "pending",
+    "payment_status": "pending",
+    "payment_method": "cod",
+    "currency": "INR",
+    "subtotal_minor": 599700,
+    "discount_minor": 0,
+    "shipping_minor": 0,
+    "tax_minor": 0,
+    "total_minor": 599700,
+    "shipping_address": { "...": "..." },
+    "billing_address": { "...": "..." },
+    "notes": "Leave at doorstep",
+    "created_at": "2026-03-28T10:00:00Z",
+    "updated_at": "2026-03-28T10:00:00Z",
+    "items": [
+      {
+        "id": "ORDER_ITEM_UUID",
+        "product_id": "PRODUCT_UUID",
+        "variant_id": "VARIANT_UUID",
+        "product_title": "Premium Linen Shirt",
+        "sku": "LINEN-BLK-M",
+        "color_name": "Black",
+        "size": "M",
+        "unit_price_minor": 199900,
+        "quantity": 2,
+        "line_total_minor": 399800
+      }
+    ]
+  }
+}
+
+Error examples:
+- 400: invalid payload / missing Idempotency-Key / invalid variant
+- 409: insufficient stock
+- 401: unauthenticated
+
+------------------------------------------------------------
+2) GET /api/orders
+Response 200:
+{
+  "items": [
+    {
+      "id": "ORDER_UUID",
+      "order_number": "ORD-ABC123DEF456",
+      "status": "pending",
+      "payment_status": "pending",
+      "total_minor": 599700,
+      "items": [ ... ],
+      "created_at": "2026-03-28T10:00:00Z",
+      "updated_at": "2026-03-28T10:00:00Z"
+    }
+  ]
+}
+
+------------------------------------------------------------
+3) GET /api/orders/{id}
+Response 200:
+- Same `order` shape as create response.
+
+------------------------------------------------------------
+4) POST /api/orders/{id}/cancel
+Body (optional):
+{
+  "note": "Customer changed mind"
+}
+
+Response 200:
+{
+  "message": "order cancelled"
+}
+
+Rules:
+- Buyer can cancel only when order status is `pending` or `confirmed`.
+
+------------------------------------------------------------
+Seller-admin endpoints
+
+1) GET /api/seller/orders
+- Lists all orders.
+
+2) GET /api/seller/orders/{id}
+- Gets single order.
+
+3) PATCH /api/seller/orders/{id}/status
+Body:
+{
+  "status": "confirmed",
+  "note": "inventory checked"
+}
+
+Allowed order status transitions:
+- pending -> confirmed, cancelled
+- confirmed -> packed, cancelled
+- packed -> shipped
+- shipped -> delivered
+
+4) PATCH /api/seller/orders/{id}/payment-status
+Body:
+{
+  "payment_status": "paid",
+  "note": "payment captured"
+}
+
+Allowed payment status transitions:
+- pending -> paid, failed
+- paid -> refunded
+- failed -> pending
+
+------------------------------------------------------------
+Frontend integration checklist
+1) Always send `credentials: "include"`.
+2) For checkout submit button:
+   - Generate a unique `Idempotency-Key` once.
+   - Disable button while request is in-flight.
+   - Reuse same key for retries of the same checkout attempt.
+3) Never trust frontend price for final order total.
+   - Backend calculates price from DB variant price.
+4) Handle 409 as stock conflict and refresh cart/variant availability.
+5) Convert money correctly:
+   - API returns amount in minor units (paise for INR).
+   - UI display: `amount_minor / 100`.

@@ -1,0 +1,3 @@
+.gocache/
+backend/.go-build-cache/
+*.go.[0-9]*
